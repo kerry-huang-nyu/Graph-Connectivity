@@ -1,51 +1,5 @@
 import itertools
 
-
-#create an interface that accepts booleans 
-#create an interface that accepts graphs 
-#this is limited to rings for now? 
-#this algorithm should be able to handle more complex graphs in the future 
-
-#ring graph where each edge has a probability of being valid 
-
-class Edge:
-    def __init__(self, node1, node2, prob):
-        self.node1 = node1
-        self.node2 = node2
-        self.prob = prob
-
-    def __repr__(self):
-        return f"Edge({self.node1}, {self.node2}, {self.prob})"
-
-
-class Graph:
-    def __init__(self, edges: list[Edge]):
-        self.edges = edges
-        # adjacency list values interpretation 
-        # 0-1 = probability of edge being valid 
-        # once an edge is discovered, the probability collapses to either 0 or 1
-        self.n = max(max(edge.node1, edge.node2) for edge in edges) + 1 # number of vertices
-        self.adj_list = self.generate_adj_list() 
-
-    def generate_adj_list(self) -> dict:
-        adj_list = [{} for i in range(self.n)]
-
-        for edge in self.edges: #assuming that this is an undirected graph
-            if edge.node2 in adj_list[edge.node1]: 
-                adj_list[edge.node1][edge.node2].append(edge.prob)
-                adj_list[edge.node2][edge.node1].append(edge.prob)
-            else:
-                adj_list[edge.node1][edge.node2] = [edge.prob]
-                adj_list[edge.node2][edge.node1] = [edge.prob]
-        return adj_list
-
-    def __repr__(self):
-        return f"Graph({self.edges})"
-
-
-#create boolean variables through the number of variables 
-#then have the statement with and, or statementes 
-#just parse through the entire statement and see if it is true or false definitively 
 class Boolean:
     def __init__(self, probability: float):
         self.probability = probability
@@ -138,7 +92,7 @@ class Gate:
         else:
             raise ValueError("Item not in literals", item)
 
-class Algorithm:
+class BooleanAlgorithm:
     def __init__(self):
         pass
 
@@ -146,7 +100,7 @@ class Algorithm:
         print("Running base algorithm")
         pass #return the next boolean to flip
 
-class KofNAlgorithm(Algorithm):
+class KofNAlgorithm(BooleanAlgorithm):
     def __init__(self, k: int):
         self.k = k #number of booleans to be True 
 
@@ -166,8 +120,6 @@ class KofNAlgorithm(Algorithm):
         #print("Sorted literals:", sorted_literals)
         return sorted_literals[target-1] #return the boolean with the kth highest probability
 
-
-edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.5), Edge(3, 4, 0.2), Edge(4, 0, 0.99)]
 
 def create_k_of_n_boolean(probabilities: list[float], k: int) -> Gate:
     booleans = [Gate({Boolean(prob)}, "AND") for prob in probabilities]

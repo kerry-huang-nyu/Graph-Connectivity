@@ -189,6 +189,11 @@ class AlwaysHighestAlgorithm(GraphAlgorithm):
             answer = edges[index-1]
         return answer
     
+def step_algorithm(algo: GraphAlgorithm, graph: Graph):
+    while graph.connected() == None: 
+        test_edge = algo.run(graph)
+        result = graph.flip(test_edge)
+        yield test_edge, result
 
 def test_algorithm(algo: GraphAlgorithm, graph: Graph, print_steps: bool = False):
     while graph.connected() == None:
@@ -231,16 +236,19 @@ def monte_carlo(edge_lst: list[Edge], algorithm: GraphAlgorithm, iterations=100)
         metrics.update(temp_graph)
     return metrics
 
-#------------------Example usage
-edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.8), Edge(3, 4, 0.99), Edge(4, 0, 0.99)]
-#test_algorithm(SimpleRingAlgorithm(len(edge_lst) - 1), Graph(edge_lst), False)
 
-edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 0, 0.8)]
-#test_algorithm(AlwaysHighestAlgorithm(), Graph(edge_lst), True)
 
-#------------------Test Monte Carlo 
-edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.8), Edge(3, 4, 0.35), Edge(4, 0, 0.99)]
-#copies were not made, must create another instance of the edge list because a side effect of initialization is that 
-#the edge list is modified 
-metrics = monte_carlo(edge_lst, SimpleRingAlgorithm(len(edge_lst) - 1), 100)
-print(metrics)
+if __name__ == "__main__": 
+    #------------------Example usage
+    edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.8), Edge(3, 4, 0.99), Edge(4, 0, 0.99)]
+    #test_algorithm(SimpleRingAlgorithm(len(edge_lst) - 1), Graph(edge_lst), False)
+
+    edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 0, 0.8)]
+    #test_algorithm(AlwaysHighestAlgorithm(), Graph(edge_lst), True)
+
+    #------------------Test Monte Carlo 
+    edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.8), Edge(3, 4, 0.35), Edge(4, 0, 0.99)]
+    #copies were not made, must create another instance of the edge list because a side effect of initialization is that 
+    #the edge list is modified 
+    metrics = monte_carlo(edge_lst, SimpleRingAlgorithm(len(edge_lst) - 1), 100)
+    print(metrics)

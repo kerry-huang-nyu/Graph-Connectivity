@@ -1,10 +1,10 @@
 from __future__ import annotations #postpones type hint eval  
 import copy
 from typing import Optional
-import dynamic_connectivity as dc
+from . import dynamic_connectivity as dc
 
 class Edge:
-    def __init__(self, node1, node2, prob):
+    def __init__(self, node1: int, node2: int, prob: float):
         self.node1 = node1
         self.node2 = node2
         self.prob = prob
@@ -61,9 +61,16 @@ class CheckDisjoined:
         self.graph = dc.DynamicConnectivity(n)
 
         #we need to initialize the self.graph with all the edges that are connected 
+        seen = set() 
         for edge in edges:
-            if edge.prob != 0: #if the edge is definitely connected 
+            
+            marker = edge.node1, edge.node2 
+            if edge.node1 > edge.node2:
+                marker = edge.node2, edge.node1
+
+            if edge.prob != 0 and marker not in seen: #if the edge is definitely connected 
                 self.graph.add_edge(edge.node1, edge.node2)
+                seen.add(marker)
 
     def disunion(self, u, v): 
         self.graph.remove_edge(u, v)
@@ -89,7 +96,7 @@ class Graph:
                     adj_list[edge.node2][edge.node1] = [edge]
             return adj_list
         
-        self.edges = edges
+        self.edges = copy.deepcopy(edges) #we make a copy of the edges so that they are flipped 
         # adjacency list values interpretation 
         # 0-1 = probability of edge being valid 
         # once an edge is discovered, the probability collapses to either 0 or 1
@@ -100,7 +107,41 @@ class Graph:
         self.disjoined = CheckDisjoined(self.n, self.edges) #to check disjointedness
         self.edges_flipped = 0 #number of edges flipped
 
-    def __repr__(self):
+    def get_bundle_status(self, start: int, end: int) -> Optional[bool]:
+        status = False #false indicates 0 certificate 
+        #all disconnected edges gives a disconnected bundle 
+
+        for edge in self.adjlst[start][end]:
+            if 1 > edge.prob > 0: #indeterminate edges with no certain edges gives indeterminate 
+                status = None 
+
+            if edge.prob == 1: #any connected edge makes the entire bundle connected 
+                status = True 
+                break 
+
+        return status
+    
+    def get_bundle_test_by_descending_prob(self, start: int, end: int) -> tuple[float, float]: 
+        #return a status of expected value 
+
+        lst = sorted(self.adjlst[start][end], reverse=True)
+        #sort the lst by the probability 
+        expected = 0
+        prob = 1 
+
+        for edge in lst: 
+            if 1 > edge.prob > 0: 
+                expected += prob
+                prob *= (1 - edge.prob)
+
+            if edge.prob == 1:
+                return (0, 0) #probability it is 0 is 0 and expected tests is 0 
+        
+        return (prob, expected)
+
+
+
+    def __repr__(self) -> str:
         return f"Graph({self.adjlst})"
     
     def flip(self, edge: Edge) -> bool:
@@ -131,14 +172,14 @@ class Graph:
         else:
             return False
         
-    def get_edges(self) -> list[Edge]:
+    def get_edges(self) -> list[Edge]: #modifiable edges that we get 
         return self.edges 
 
 class GraphAlgorithm: 
     def __init__(self):
         pass
     
-    def run(self, graph: Graph):
+    def run(self, graph: Graph) -> Edge: #return the edge object to flip 
         print("Running base algorithm")
         pass #return the next edge to flip
 
@@ -147,7 +188,7 @@ class SimpleRingAlgorithm(GraphAlgorithm):
     def __init__(self, k: int):
         self.k = k #number of edges to be True 
 
-    def run(self, graph: Graph):
+    def run(self, graph: Graph) -> Edge:
         #return the edge with the highest probability 
         #assume that the graph is a ring (and not multigraph) we want to find the next edges to test
         
@@ -174,20 +215,66 @@ class AlwaysHighestAlgorithm(GraphAlgorithm):
     def __init__(self): #I mean I can definitely make this more efficient and just sort the edges once 
         pass  
 
-    def run(self, graph: Graph):
+    def run(self, graph: Graph) -> Edge:
         #sort the graph by the edges probabilty and always choose the highest likelihood 
         edges = graph.get_edges() 
-        edges.sort()  #should automatically sort by edge probabilies 
+        sortedges = [(edge.prob, i) for i, edge in enumerate(edges)]
+        sortedges.sort()  #should automatically sort by edge probabilies 
         #sorted(edges, key = lambda x: x.probability)
 
         #find the first value that is not 1 
         #finds the first value that is greater than or equal to current value 
         from bisect import bisect_left 
-        index = bisect_left(edges, Edge(0,0,1)) #search with an edge that has a 1 probability 
-        answer = None 
+        index = bisect_left(sortedges, (1, -1)) #search for any edge with a 1 percent probability 
+        tupl = None 
         if (index - 1 >= 0): 
-            answer = edges[index-1]
-        return answer
+            tupl = sortedges[index-1]
+        else: #some other exceptions here as well uncaught
+            raise Exception("error, should have terminated already since I have tested all values ")
+        output = edges[tupl[1]]
+        return output
+    
+
+class Optimal1CertificateAlgorithm(GraphAlgorithm):
+    def __init__(self): 
+        pass  
+
+    def run(self, graph: Graph) -> Edge:
+        #sort the graph by the edges probabilty and always choose the highest likelihood 
+        edges = graph.get_edges() 
+
+        sortedges = [(edge.prob, i) for i, edge in enumerate(edges)]
+        sortedges.sort()  #should automatically sort by edge probabilies 
+
+        #go through the sorted edges and make sure you select the highest edge the in bundle that is not determined
+        from bisect import bisect_left 
+        index = bisect_left(sortedges, (1, -1)) #search for any edge with a certain probability 
+        for i in range(index - 1, -1, -1): 
+            edgeprob, loc = sortedges[i]
+            edge = edges[loc]
+            if graph.get_bundle_status(edge.node1, edge.node2) == None:  #still indeterminate 
+                return edge 
+        raise ValueError("I am supposed to return an answer but it turns out all bundles are already evaluated?")
+    
+    
+class DFS0CertificateAlgorithm(GraphAlgorithm): 
+    #the idea is always to choose the dfs 0 algorithm 
+    def __init__(self): 
+        pass  
+
+    def run(self, graph: Graph) -> Edge:
+        #get all of the buckets and choose the one that doesn't have a determination 
+        #get all of the buckets and choose the bucket by the chance that we have a 0 
+
+        lst = graph.get_edges() 
+        tup = [graph.get_bundle_test_by_descending_prob(edge.node1, edge.node2) for edge in lst]
+        zipped = list(zip(tup, lst))
+
+        #prob/expected we want high probability 
+        filtered = [(stats[0]/stats[1], edge) for stats, edge in zipped if stats[1] != 0]
+        lst = sorted(filtered) #sort by 
+        return lst[-1][-1]
+
     
 def step_algorithm(algo: GraphAlgorithm, graph: Graph):
     while graph.connected() == None: 
@@ -213,42 +300,80 @@ class Metrics:
         self.simulations = simulations
         self.connected = 0
         self.disconnected = 0 
-        self.edges_flipped = 0 
+        self.connected_flipped = 0
+        self.disconnected_flipped = 0 
+
+    def get_total_runs(self) -> int:
+        return self.connected + self.disconnected 
 
     def update(self, graph: Graph):
         if graph.connected() == True:
             self.connected += 1
+            self.connected_flipped += graph.edges_flipped
         else:
             self.disconnected += 1
-        self.edges_flipped += graph.edges_flipped
+            self.disconnected_flipped += graph.edges_flipped
 
-    def __repr__(self):
-        return f"Metrics(simulations={self.simulations}, connected={self.connected}, disconnected={self.disconnected}, runtime={self.edges_flipped/self.simulations})"
+    def __repr__(self) -> str:
+        return f"Metrics(simulations={self.simulations}, connected={self.connected}, disconnected={self.disconnected}, 1 certificate={self.connected_flipped/self.connected}, 0 certificate={self.disconnected_flipped/self.disconnected})"
     
-def monte_carlo(edge_lst: list[Edge], algorithm: GraphAlgorithm, iterations=100) -> float: 
+def monte_carlo(edge_lst: list[Edge], algorithm: GraphAlgorithm, iterations:int =100, certificate:Optional[bool]=None) -> float: 
     #monte carlo with take the graph at the point your insert it and then run the algorithm on it, reporting metrics 
     metrics = Metrics(simulations=iterations)
     #metrics track the number of total flips reported by the graph since its creation, not since its insertion into monte carlo function
 
-    for _ in range(iterations):
-        temp_graph = Graph(copy.deepcopy(edge_lst))
+    condition = lambda metric: metric.get_total_runs() == iterations
+    if certificate == True: #this means 1 certificate only 
+        condition = lambda metric: metric.connected == iterations 
+    elif certificate == False: 
+        condition = lambda metric: metric.disconnected == iterations 
+
+    while condition(metrics) == False:
+        temp_graph = Graph(edge_lst)
         test_algorithm(algorithm, temp_graph)
         metrics.update(temp_graph)
+        
     return metrics
-
 
 
 if __name__ == "__main__": 
     #------------------Example usage
-    edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.8), Edge(3, 4, 0.99), Edge(4, 0, 0.99)]
-    #test_algorithm(SimpleRingAlgorithm(len(edge_lst) - 1), Graph(edge_lst), False)
+    #edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.3), Edge(3, 4, 0.99), Edge(4, 0, 0.99)]
+    #test_algorithm(SimpleRingAlgorithm(len(edge_lst) - 1), Graph(edge_lst), True)
 
-    edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 0, 0.8)]
+    #print("\n starting always highest algorithm")
+
+    #edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 0, 0.8), Edge(0, 1, 0.0)]
     #test_algorithm(AlwaysHighestAlgorithm(), Graph(edge_lst), True)
 
     #------------------Test Monte Carlo 
-    edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.8), Edge(3, 4, 0.35), Edge(4, 0, 0.99)]
+    #edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.8), Edge(3, 4, 0.35), Edge(4, 0, 0.99)]
     #copies were not made, must create another instance of the edge list because a side effect of initialization is that 
     #the edge list is modified 
-    metrics = monte_carlo(edge_lst, SimpleRingAlgorithm(len(edge_lst) - 1), 100)
-    print(metrics)
+    # metrics = monte_carlo(edge_lst, SimpleRingAlgorithm(len(edge_lst) - 1), 100, True)
+    # print(metrics)
+
+    # edge_lst = [
+    #     Edge(0, 1, 0.9),
+    #     Edge(0, 1, 0.8),
+    #     Edge(0, 1, 0.2),
+    #     Edge(1, 2, 0.2),
+    #     Edge(1, 2, 0.9),
+    #     Edge(0, 2, 0.1),
+    # ]
+    # algo = Optimal1CertificateAlgorithm()
+    # g = Graph(edge_lst)
+    # test_algorithm(algo, g, True)
+
+
+    edge_lst = [
+        Edge(0, 1, 0.9),
+        Edge(0, 1, 0.8),
+        Edge(0, 1, 0.2),
+        Edge(1, 2, 0.2),
+        Edge(1, 2, 0.9),
+        Edge(0, 2, 0.1),
+    ]
+    algo = DFS0CertificateAlgorithm()
+    g = Graph(edge_lst)
+    test_algorithm(algo, g, True)

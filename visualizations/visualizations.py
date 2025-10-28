@@ -7,7 +7,7 @@ from collections import Counter
 
 import sys 
 sys.path.append("..")
-from graph import Graph, Edge, GraphAlgorithm, SimpleRingAlgorithm, step_algorithm
+from src.graph import *
 
 # ---- Helpers to convert to/from NX/Dash ----
 def graph_to_nx_multigraph(graph: Graph) -> nx.MultiGraph:
@@ -51,60 +51,6 @@ def to_elements_from_serialized(serial_G: dict, pos: dict):
     edges = [{"data": {"id": f'{e["u"]}-{e["v"]}-{e["k"]}',
                        "source": e["u"], "target": e["v"], "label": e["label"]}} for e in serial_G["edges"]]
     return nodes + edges
-
-# superseded by graph_to_nx_multigraph(graph)
-# def graph_conversion(graph: Graph) -> nx.MultiGraph: 
-#     #get the edge and the number of vertices 
-#     G = nx.MultiGraph() 
-#     G.add_nodes_from([str(i) for i in graph.n]) 
-# 
-#     seen = Counter() 
-#     for edge in graph.edges: 
-#         n1, n2, p = edge
-#         if n1 > n2: #swap so the first element is smaller 
-#             n1, n2 = n2, n1 
-#         seen[(n1, n2)] += 1 #add another edge between the two nodes 
-# 
-#         #the key is set as the count of the edge between the 2 endpoints 
-#         G.add_edge(str(n1), str(n2), key=f'{n1}-{n2}-{seen[(n1,n2)]}', label=f'{p}')
-#     return G
-# 
-# superseded by build_snapshots(graph) above
-# def build_snapshots(graph: Graph): 
-#     snapshots = [graph_conversion(graph)]
-#     for step in step_algorithm(graph): 
-#         snapshots.append(graph_conversion(graph))
-#     return snapshots
-# 
-# superseded by get_fixed_positions(first_graph) above
-# def get_fixed_positions(snapshots: list[nx.MultiGraph]):
-#     _raw_pos = nx.circular_layout(snapshots[0])  # dict: node -> (x, y) in [-1, 1]
-#     SCALE = 250
-#     POS = {n: {"x": float(x) * SCALE, "y": float(y) * SCALE}
-#         for n, (x, y) in _raw_pos.items()}
-#     return POS 
-# 
-# superseded by to_elements_from_serialized(serial_G, pos)
-# def to_elements(G: nx.MultiGraph):
-#     # Nodes with fixed positions (preset layout)
-#     nodes = [
-#         {"data": {"id": str(n), "label": str(n)}, "position": POS[str(n)]}
-#         for n in G.nodes()
-#     ]
-# 
-#     # Edges: include a unique 'id' per parallel edge (use the MultiGraph key)
-#     edges = []
-#     for u, v, k, data in G.edges(keys=True, data=True):
-#         edge_label = data.get("label", k)
-#         edges.append({
-#             "data": {
-#                 "id": f"{u}-{v}-{k}",
-#                 "source": str(u),
-#                 "target": str(v),
-#                 "label": str(edge_label),
-#             }
-#         })
-#     return nodes + edges
 
 app = dash.Dash(__name__)
 app.layout = html.Div([
@@ -196,7 +142,7 @@ def update_elements(k, serialized_snaps, pos):
     k = max(0, min(k, len(serialized_snaps) - 1))
     serial_G = serialized_snaps[k]
     # compute components for info panel
-    H = nx.Graph()
+    H = nx.MultiGraph()
     H.add_nodes_from(serial_G["nodes"])
     H.add_edges_from([(e["u"], e["v"]) for e in serial_G["edges"]])
     comps = list(nx.connected_components(H))
@@ -224,17 +170,30 @@ def sync_slider(serialized_snaps):
     prevent_initial_call=False,
 )
 def simulate_graph(_):
-    # Define your edge list for simulation; adjust as desired
+    #Define your edge list for simulation; adjust as desired
+    # edge_lst = [
+    #     Edge(0, 1, 0.9),
+    #     Edge(1, 2, 0.2),
+    #     Edge(2, 3, 0.8),
+    #     Edge(3, 4, 0.3),
+    #     Edge(4, 5, 0.5),
+    #     Edge(5, 0, 0.5),
+    # ]
+    # g = Graph(edge_lst)
+    # algo = SimpleRingAlgorithm(len(edge_lst) - 1)
+
     edge_lst = [
-        Edge(0, 1, 0.9),
+        Edge(0, 1, 0.2),
+        Edge(0, 1, 0.8),
+        Edge(0, 1, 0.2),
         Edge(1, 2, 0.2),
-        Edge(2, 3, 0.8),
-        Edge(3, 4, 0.3),
-        Edge(4, 5, 0.5),
-        Edge(5, 0, 0.5),
+        Edge(1, 2, 0.9),
+        Edge(3, 2, 0.1),
+        Edge(1, 0, 0.01),
+        Edge(3, 0, 0.4)
     ]
+    algo = AlwaysHighestAlgorithm()
     g = Graph(edge_lst)
-    algo = SimpleRingAlgorithm(len(edge_lst) - 1)
     snaps = build_snapshots(algo, g)               # list[nx.MultiGraph]
     pos = get_fixed_positions(snaps[0])      # fixed positions from first snapshot
     return serialize_snapshots(snaps), pos

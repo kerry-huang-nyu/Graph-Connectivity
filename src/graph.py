@@ -100,7 +100,9 @@ class Graph:
         # adjacency list values interpretation 
         # 0-1 = probability of edge being valid 
         # once an edge is discovered, the probability collapses to either 0 or 1
-        self.n = max(max(edge.node1, edge.node2) for edge in edges) + 1 # number of vertices
+        self.n = 0 
+        if len(edges):
+            self.n = max(max(edge.node1, edge.node2) for edge in edges) + 1 # number of vertices
         self.adjlst = generate_adj_list()  #current state of the graph
 
         self.dsu = CheckJoined(self.n) #DSU to check connectivity
@@ -296,8 +298,8 @@ def test_algorithm(algo: GraphAlgorithm, graph: Graph, print_steps: bool = False
     #print(graph.connected())
     
 class Metrics:
-    def __init__(self, simulations = 100):
-        self.simulations = simulations
+    def __init__(self):
+        self.simulations = 0
         self.connected = 0
         self.disconnected = 0 
         self.connected_flipped = 0
@@ -313,13 +315,14 @@ class Metrics:
         else:
             self.disconnected += 1
             self.disconnected_flipped += graph.edges_flipped
+        self.simulations += 1 
 
     def __repr__(self) -> str:
         return f"Metrics(simulations={self.simulations}, connected={self.connected}, disconnected={self.disconnected}, 1 certificate={self.connected_flipped/self.connected}, 0 certificate={self.disconnected_flipped/self.disconnected})"
     
 def monte_carlo(edge_lst: list[Edge], algorithm: GraphAlgorithm, iterations:int =100, certificate:Optional[bool]=None) -> float: 
     #monte carlo with take the graph at the point your insert it and then run the algorithm on it, reporting metrics 
-    metrics = Metrics(simulations=iterations)
+    metrics = Metrics()
     #metrics track the number of total flips reported by the graph since its creation, not since its insertion into monte carlo function
 
     condition = lambda metric: metric.get_total_runs() == iterations

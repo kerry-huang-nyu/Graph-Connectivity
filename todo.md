@@ -20,3 +20,13 @@ Todo:
 2. Implement 0 verification heuristic dfs and compare empirically 
 3. Webapp can model much more algos: 
     - create a little 
+
+
+
+
+    random multi cycle? 
+    interface input for edges 
+    toggle for different algorithms
+    toggle for diffeent graphs 
+    
+    run experiments and reflect on the experiments. do they do very bad? come up with different heuristics

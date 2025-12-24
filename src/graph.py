@@ -1,7 +1,11 @@
 from __future__ import annotations #postpones type hint eval  
 import copy
+from functools import cache
+import random
 from typing import Optional
 from . import dynamic_connectivity as dc
+from collections import defaultdict
+
 
 class Edge:
     def __init__(self, node1: int, node2: int, prob: float):
@@ -9,11 +13,12 @@ class Edge:
         self.node2 = node2
         self.prob = prob
     
+    #comparison operator is only created to serve the probabilities 
     def __lt__(self, other: Edge): 
-        return self.prob < other.prob 
+        return (self.prob, self.node1, self.node2) < (other.prob, other.node1, other.node2)
     
-    def __eq__(self, other: Edge):
-        return self.prob == other.prob 
+    # def __eq__(self, other: Edge):
+    #     return self.prob == other.prob 
 
     def __repr__(self):
         return f"Edge({self.node1}, {self.node2}, {self.prob})"
@@ -28,10 +33,15 @@ class Edge:
         return result 
 
 class CheckJoined: #Disjoint Set Union for connected components
-    def __init__(self, n):
+    def __init__(self, n: int, edges: list[Edge]):
         self.parent = list(range(n)) #initially each node is its own parent
         self.rank = [1] * n #initially each node is in a set of size 1
         self.components = n #initially there are n components
+
+        #we should add in edges that are for sure joined 
+        for edge in edges: 
+            if edge.prob == 1: 
+                self.union(edge.node1, edge.node2)
 
     def find(self, u): #find with path compression 
         #ackerman's function at work, very efficient 
@@ -100,12 +110,10 @@ class Graph:
         # adjacency list values interpretation 
         # 0-1 = probability of edge being valid 
         # once an edge is discovered, the probability collapses to either 0 or 1
-        self.n = 0 
-        if len(edges):
-            self.n = max(max(edge.node1, edge.node2) for edge in edges) + 1 # number of vertices
+        self.n = max((max(edge.node1, edge.node2) for edge in edges), default=0) + 1 # number of vertices always 1 vertex 
         self.adjlst = generate_adj_list()  #current state of the graph
 
-        self.dsu = CheckJoined(self.n) #DSU to check connectivity
+        self.dsu = CheckJoined(self.n, self.edges) #DSU to check connectivity
         self.disjoined = CheckDisjoined(self.n, self.edges) #to check disjointedness
         self.edges_flipped = 0 #number of edges flipped
 
@@ -142,7 +150,6 @@ class Graph:
         return (prob, expected)
 
 
-
     def __repr__(self) -> str:
         return f"Graph({self.adjlst})"
     
@@ -176,6 +183,119 @@ class Graph:
         
     def get_edges(self) -> list[Edge]: #modifiable edges that we get 
         return self.edges 
+
+class GraphFactory:
+    """Factory for generating random multigraphs (bundled edges).
+
+    Parameters correspond to the sliders you described:
+      1) num_nodes: number of bundles / nodes in the base graph.
+      2) bundle_size_std: stddev controlling how non-uniform bundle sizes are.
+      3) bundle_size_mean: mean number of parallel edges per bundle.
+      4) prob_std: stddev of edge probabilities.
+      5) prob_mean: mean of edge probabilities.
+
+    By default we generate a ring base graph, so the number of bundles
+    equals num_nodes (pairs (i, i+1)). This matches your current ring focus.
+    """
+
+    def __init__(self, seed: Optional[int] = None):
+        self.rng = random.Random(seed)
+
+    def _clip01(self, x: float) -> float:
+        return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
+
+    def _sample_int(self, mean: float, std: float, min_value: int = 1) -> int:
+        # Gaussian then round, with a floor so bundles don't disappear.
+        val = int(round(self.rng.gauss(mean, std)))
+        return max(min_value, val)
+
+    def _sample_prob(self, mean: float, std: float) -> float:
+        # Gaussian in R, clipped to [0, 1].
+        sigfig = 2 #2 significant figures 
+        return self._clip01(round(self.rng.gauss(mean, std), sigfig))
+
+    def create(
+        self,
+        num_nodes: int,
+        bundle_size_mean: float,
+        bundle_size_std: float,
+        prob_mean: float,
+        prob_std: float,
+        topology: str = "ring",
+        erdos_p: float = 0.3,
+    ) -> Graph:
+        """Create a Graph with bundled/parallel edges.
+
+        Args:
+            num_nodes: number of vertices in the graph.
+            bundle_size_mean: average bundle size (parallel edges per node-pair).
+            bundle_size_std: stddev of bundle sizes.
+            prob_mean: average probability of an edge being present.
+            prob_std: stddev of edge probabilities.
+            topology: 'ring' (default), 'path', 'complete', or 'erdos_renyi'.
+            erdos_p: if topology == 'erdos_renyi', probability a base edge exists.
+        """
+        if num_nodes <= 0:
+            raise ValueError("num_nodes must be positive")
+        if bundle_size_mean <= 0:
+            raise ValueError("bundle_size_mean must be positive")
+        if bundle_size_std < 0 or prob_std < 0:
+            raise ValueError("stddev parameters must be non-negative")
+
+        # 1) Choose base (simple) edges = bundles.
+        base_pairs: list[tuple[int, int]] = []
+        topo = topology.lower()
+
+        if topo == "ring":
+            for i in range(num_nodes):
+                base_pairs.append((i, (i + 1) % num_nodes))
+        elif topo == "path":
+            for i in range(num_nodes - 1):
+                base_pairs.append((i, i + 1))
+        elif topo == "complete":
+            for i in range(num_nodes):
+                for j in range(i + 1, num_nodes):
+                    base_pairs.append((i, j))
+        elif topo == "erdos_renyi":
+            for i in range(num_nodes):
+                for j in range(i + 1, num_nodes):
+                    if self.rng.random() < erdos_p:
+                        base_pairs.append((i, j))
+            # ensure at least a connected-ish skeleton if p is tiny
+            if not base_pairs:
+                base_pairs = [(i, i + 1) for i in range(num_nodes - 1)]
+        else:
+            raise ValueError(f"Unknown topology: {topology}")
+
+        # 2) Sample bundle sizes and edge probabilities.
+        edges: list[Edge] = []
+        for (u, v) in base_pairs:
+            k = self._sample_int(bundle_size_mean, bundle_size_std, min_value=1)
+            for _ in range(k):
+                p = self._sample_prob(prob_mean, prob_std)
+                edges.append(Edge(u, v, p))
+
+        return Graph(edges)
+
+
+def make_graph(
+    num_nodes: int,
+    bundle_size_mean: float,
+    bundle_size_std: float,
+    prob_mean: float,
+    prob_std: float,
+    topology: str = "ring",
+    seed: Optional[int] = None,
+) -> Graph:
+    """Convenience wrapper for one-off graph generation."""
+    return GraphFactory(seed=seed).create(
+        num_nodes=num_nodes,
+        bundle_size_mean=bundle_size_mean,
+        bundle_size_std=bundle_size_std,
+        prob_mean=prob_mean,
+        prob_std=prob_std,
+        topology=topology,
+    )
 
 class GraphAlgorithm: 
     def __init__(self):
@@ -258,6 +378,62 @@ class Optimal1CertificateAlgorithm(GraphAlgorithm):
                 return edge 
         raise ValueError("I am supposed to return an answer but it turns out all bundles are already evaluated?")
     
+class OptimalAlgorithm(GraphAlgorithm): 
+    def __init__(self): 
+        pass 
+    
+    @cache 
+    def dp(self, edges:tuple[Edge]) -> (float, Edge): # the float indicates the expected number to flip, then edge is the optimal edge to flip 
+        original = Graph(edges)
+
+        if original.connected() != None: #either connected or not 
+            return (0, None)  #already determined, so then no need to do anything anymore to further investigate 
+        
+        #assume that edges is already sorted 
+        #go through the edges to find one that is unflipped 
+        minflip = float('inf')
+        edgeflip = None 
+
+        for i in range(len(edges)): 
+            edge = edges[i]
+
+            #if we can have the edge switch to antoher 
+            if edge.prob not in (0, 1): #so we are not deterministic yet 
+                #flip to be true 
+                newedges = list(copy.copy(edges))
+                newedges[i] = Edge(edge.node1, edge.node2, 1) #flip to 1
+                newedges.sort() 
+                expected_true, _ = self.dp(tuple(newedges))
+
+                #flip to be false 
+                newedges = list(copy.copy(edges))
+                newedges[i] = Edge(edge.node1, edge.node2, 0) #flip to 0
+                newedges.sort() 
+                expected_false, _ = self.dp(tuple(newedges))
+
+                expected_flip = edge.prob * expected_true + (1 - edge.prob) * expected_false + 1 #+1 for the flip we just did
+
+                if expected_flip < minflip:
+                    minflip = expected_flip
+                    edgeflip = edge 
+
+        if edgeflip == None or minflip == float('inf'):
+            raise ValueError
+        return (minflip, edgeflip) 
+
+    def run(self, graph:Graph) -> Edge: 
+        edges = graph.get_edges() 
+        newedges = copy.copy(edges)
+        newedges.sort()
+
+        expected_flips, edge = self.dp(tuple(newedges))
+
+        #return the edge lying within the graph itself
+        for edge_original in edges: 
+            if edge_original.node1 == edge.node1 and edge_original.node2 == edge.node2 and edge_original.prob == edge.prob:
+                return edge_original
+        raise ValueError
+    
     
 class DFS0CertificateAlgorithm(GraphAlgorithm): 
     #the idea is always to choose the dfs 0 algorithm 
@@ -277,7 +453,33 @@ class DFS0CertificateAlgorithm(GraphAlgorithm):
         lst = sorted(filtered) #sort by 
         return lst[-1][-1]
 
-    
+
+class SmallestBundleAlgorithm(GraphAlgorithm):
+    def __init__(self):
+        pass 
+
+    def run(self, graph: Graph): 
+        #get all bundles that have not resolved yet 
+        lst = graph.get_edges() 
+        bundles = defaultdict(list) 
+
+        for edge in lst: 
+            if graph.get_bundle_status(edge.node1, edge.node2) == None: #still undefined 
+                first, second = (edge.node1, edge.node2) if edge.node1 < edge.node2 else (edge.node2, edge.node1)
+                bundles[(first, second)].append(edge)
+        
+        answer = [value for key, value in bundles.items()]
+        answer.sort(key=len)
+
+        answer[0].sort()
+
+        return answer[0][-1]
+
+
+        #get the edge that has the highest value of being 1 
+
+
+
 def step_algorithm(algo: GraphAlgorithm, graph: Graph):
     while graph.connected() == None: 
         test_edge = algo.run(graph)
@@ -340,6 +542,17 @@ def monte_carlo(edge_lst: list[Edge], algorithm: GraphAlgorithm, iterations:int 
 
 
 if __name__ == "__main__": 
+    # ------------------Factory example
+    # factory = GraphFactory(seed=0)
+    # g = factory.create(
+    #     num_nodes=6,
+    #     bundle_size_mean=3,
+    #     bundle_size_std=1,
+    #     prob_mean=0.6,
+    #     prob_std=0.2,
+    #     topology="ring",
+    # )
+    # test_algorithm(AlwaysHighestAlgorithm(), g, True)
     #------------------Example usage
     #edge_lst = [Edge(0, 1, 0.1), Edge(1, 2, 0.99), Edge(2, 3, 0.3), Edge(3, 4, 0.99), Edge(4, 0, 0.99)]
     #test_algorithm(SimpleRingAlgorithm(len(edge_lst) - 1), Graph(edge_lst), True)
@@ -369,6 +582,18 @@ if __name__ == "__main__":
     # test_algorithm(algo, g, True)
 
 
+    # edge_lst = [
+    #     Edge(0, 1, 0.9),
+    #     Edge(0, 1, 0.8),
+    #     Edge(0, 1, 0.2),
+    #     Edge(1, 2, 0.2),
+    #     Edge(1, 2, 0.9),
+    #     Edge(0, 2, 0.1),
+    # ]
+    # algo = OptimalAlgorithm()
+    # g = Graph(edge_lst)
+    # test_algorithm(algo, g, True)
+
     edge_lst = [
         Edge(0, 1, 0.9),
         Edge(0, 1, 0.8),
@@ -377,6 +602,93 @@ if __name__ == "__main__":
         Edge(1, 2, 0.9),
         Edge(0, 2, 0.1),
     ]
-    algo = DFS0CertificateAlgorithm()
+    algo = OptimalAlgorithm()
     g = Graph(edge_lst)
     test_algorithm(algo, g, True)
+
+
+    # ------------------Monte Carlo report over factory graphs
+    # from dataclasses import dataclass
+
+    # @dataclass
+    # class GraphSpec:
+    #     name: str
+    #     num_nodes: int
+    #     bundle_mean: float
+    #     bundle_std: float
+    #     prob_mean: float
+    #     prob_std: float
+    #     topology: str = "ring"
+
+    # specs = [
+    #     GraphSpec(
+    #         name="G1: ring(10 nodes), bundle mean=3",
+    #         num_nodes=10,
+    #         bundle_mean=3,
+    #         bundle_std=1,
+    #         prob_mean=0.6,
+    #         prob_std=0.2,
+    #     ),
+    #     GraphSpec(
+    #         name="G2: ring(5 nodes), bundle mean=5",
+    #         num_nodes=5,
+    #         bundle_mean=5,
+    #         bundle_std=1,
+    #         prob_mean=0.6,
+    #         prob_std=0.2,
+    #     ),
+    #     GraphSpec(
+    #         name="G3: ring(3 nodes), bundle mean=2",
+    #         num_nodes=3,
+    #         bundle_mean=2,
+    #         bundle_std=1,
+    #         prob_mean=0.6,
+    #         prob_std=0.2,
+    #     ),
+    # ]
+
+    # def build_algorithms(n_nodes: int) -> list[tuple[str, GraphAlgorithm]]:
+    #     # SimpleRingAlgorithm expects k = target #true edges in a SIMPLE ring.
+    #     # We use n_nodes - 1, which matches the classic 1-certificate for an n-cycle.
+    #     return [
+    #         ("SimpleRingAlgorithm", SimpleRingAlgorithm(n_nodes - 1)),
+    #         ("AlwaysHighestAlgorithm", AlwaysHighestAlgorithm()),
+    #         ("Optimal1CertificateAlgorithm", Optimal1CertificateAlgorithm()),
+    #         ("DFS0CertificateAlgorithm", DFS0CertificateAlgorithm()),
+    #         ("SmallestBundleAlgorithm", SmallestBundleAlgorithm()),
+    #     ]
+
+    # def run_report(iterations: int = 1000):
+    #     factory = GraphFactory(seed=0)
+    #     for spec in specs:
+    #         print("\n==============================")
+    #         print(spec.name)
+    #         print("(iterations =", iterations, ")")
+    #         g = factory.create(
+    #             num_nodes=spec.num_nodes,
+    #             bundle_size_mean=spec.bundle_mean,
+    #             bundle_size_std=spec.bundle_std,
+    #             prob_mean=spec.prob_mean,
+    #             prob_std=spec.prob_std,
+    #             topology=spec.topology,
+    #         )
+    #         base_edges = g.get_edges()  # safe because Graph deepcopies internally
+
+    #         algos = build_algorithms(spec.num_nodes)
+    #         results = []
+    #         for algo_name, algo in algos:
+    #             m = monte_carlo(base_edges, algo, iterations)
+    #             results.append((algo_name, m))
+
+    #         # Pretty print
+    #         header = f"{'Algorithm':30s} | {'Connected%':10s} | {'Avg flips (1-cert)':18s} | {'Avg flips (0-cert)':18s}"
+    #         print(header)
+    #         print("-" * len(header))
+    #         for algo_name, m in results:
+    #             total = m.get_total_runs() if m.get_total_runs() else 1
+    #             connected_pct = 100.0 * m.connected / total
+    #             avg1 = (m.connected_flipped / m.connected) if m.connected else float('nan')
+    #             avg0 = (m.disconnected_flipped / m.disconnected) if m.disconnected else float('nan')
+    #             print(f"{algo_name:30s} | {connected_pct:9.2f}% | {avg1:18.3f} | {avg0:18.3f}")
+
+    # run_report(iterations=1000)

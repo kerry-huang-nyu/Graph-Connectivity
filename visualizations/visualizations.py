@@ -8,7 +8,24 @@ import json
 
 import sys 
 sys.path.append("..")
+
 from src.graph import *
+
+# ---- Algorithm registry / resolver (unified for simulate + metrics) ----
+_ALGO_REG = {
+    "AlwaysHighestAlgorithm": (AlwaysHighestAlgorithm, None),     # monte flag for this algo
+    "Optimal1CertificateAlgorithm": (Optimal1CertificateAlgorithm, True),
+    "DFS0CertificateAlgorithm": (DFS0CertificateAlgorithm, False),
+    "SmallestBundleAlgorithm": (SmallestBundleAlgorithm, False),
+    "OptimalAlgorithm": (OptimalAlgorithm, False),
+}
+def resolve_algo(algo_key: str):
+    """
+    Return (AlgoClass, monte_flag) for the given key from algo-store.
+    Defaults to AlwaysHighestAlgorithm and monte_flag=None.
+    """
+    return _ALGO_REG.get(algo_key or "AlwaysHighestAlgorithm",
+                         (AlwaysHighestAlgorithm, None))
 
 # ---- Helpers to convert to/from NX/Dash ----
 def graph_to_nx_multigraph(graph: Graph) -> nx.MultiGraph:
@@ -53,26 +70,51 @@ def to_elements_from_serialized(serial_G: dict, pos: dict):
                        "source": e["u"], "target": e["v"], "label": e["label"]}} for e in serial_G["edges"]]
     return nodes + edges
 
+def get_edges(graph: Graph):
+    edges = graph.get_edges()
+    output = [] 
+
+    for edge in edges: 
+        output.append({"start": edge.node1, "end": edge.node2, "prob": edge.prob})
+    
+    return output
+
+
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 app.layout = html.Div([
     dcc.Store(id="snapshots-store"),
     dcc.Store(id="pos-store"),
-    dcc.Store(id="edge-store", data=[
-        {"start": 0, "end": 1, "prob": 0.2},
-        {"start": 0, "end": 1, "prob": 0.8},
-        {"start": 2, "end": 1, "prob": 0.2},
-        {"start": 2, "end": 1, "prob": 0.9},
-        {"start": 3, "end": 2, "prob": 0.1},
-        {"start": 0, "end": 1, "prob": 0.01},
-        {"start": 0, "end": 3, "prob": 0.4},
-    ]),
+    dcc.Store(id="algo-store", data="AlwaysHighestAlgorithm"),
+    dcc.Store(id="edge-store", data=get_edges(GraphFactory().create(
+        num_nodes=6,
+        bundle_size_mean=3,
+        bundle_size_std=1,
+        prob_mean=0.6,
+        prob_std=0.2,
+        topology="ring",))),
     html.Div([
         dcc.Input(id="start-node", type="number", placeholder="Start node", style={"width": "80px"}),
         dcc.Input(id="end-node", type="number", placeholder="End node", style={"width": "80px", "marginLeft": "8px"}),
         dcc.Input(id="prob", type="number", placeholder="Probability", min=0, max=1, step=0.01, style={"width": "100px", "marginLeft": "8px"}),
         html.Button("Add Edge", id="add-edge-btn", n_clicks=0, style={"marginLeft": "8px"})
     ], style={"marginBottom": "10px"}),
-    html.Button("Simulate", id="simulate-btn", n_clicks=0),
+    html.Div([
+        dcc.Dropdown(
+            id="algo-picker",
+            options=[
+                {"label": "Always Highest", "value": "AlwaysHighestAlgorithm"},
+                {"label": "Optimal 1-Cert", "value": "Optimal1CertificateAlgorithm"},
+                {"label": "DFS 0-Cert", "value": "DFS0CertificateAlgorithm"},
+                {"label": "Smallest Bundle First", "value": "SmallestBundleAlgorithm"},
+                {"label": "Optimal Exponential Algorithm", "value": "OptimalAlgorithm"},
+            ],
+            value="AlwaysHighestAlgorithm",
+            clearable=False,
+            style={"width": "300px"}
+        )
+    ], style={"marginBottom": "10px"}),
+    html.Button("Generate Random Graph", id="gen-graph-btn", n_clicks=0),
+    html.Button("Simulate", id="simulate-btn", n_clicks=0, style={"marginLeft": "8px"}),
     html.Button("Run Monte Carlo", id="metrics-btn", n_clicks=0, style={"marginLeft": "8px"}),
     html.Div(
         style={"display": "flex", "alignItems": "flex-start"},
@@ -228,6 +270,34 @@ def upsert_edges(n_add, tap_edge, start, end, prob, edges):
     raise dash.exceptions.PreventUpdate
 
 @app.callback(
+    Output("algo-store", "data"),
+    Input("algo-picker", "value"),
+    prevent_initial_call=False,
+)
+def set_algo(val):
+    return val or "AlwaysHighestAlgorithm"
+
+
+# --- Generate random graph callback ---
+@app.callback(
+    Output("edge-store", "data", allow_duplicate=True),
+    Input("gen-graph-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def generate_random_graph(n_clicks):
+    # Use click count as a seed so each press yields a different (but reproducible) graph.
+    seed = int(n_clicks or 0)
+    g = GraphFactory(seed=seed).create(
+        num_nodes=6,
+        bundle_size_mean=3,
+        bundle_size_std=1,
+        prob_mean=0.6,
+        prob_std=0.2,
+        topology="ring",
+    )
+    return get_edges(g)
+
+@app.callback(
     Output("cy", "elements"),
     Output("info", "children"),
     Input("step", "value"),
@@ -288,38 +358,26 @@ def normalize_edges(edges):
     Output("pos-store", "data"),
     Input("simulate-btn", "n_clicks"),
     Input("edge-store", "data"),
+    Input("algo-store", "data"),
     prevent_initial_call=False,
 )
-def simulate_graph(_, edge_data):
-    edge_lst = [Edge(e["start"], e["end"], e["prob"]) for e in edge_data]
-    algo = DFS0CertificateAlgorithm()
-    
+def simulate_graph(_, edge_data, algo_key):
+    edge_lst = [Edge(e["start"], e["end"], e["prob"]) for e in (edge_data or [])]
+    AlgoCls, _ = resolve_algo(algo_key)
+    algo = AlgoCls()
     g = Graph(edge_lst)
     snaps = build_snapshots(algo, g)               # list[nx.MultiGraph]
     pos = get_fixed_positions(snaps[0])      # fixed positions from first snapshot
     return serialize_snapshots(snaps), pos
 
-def simulate_monte_carlo(_):
-    edge_lst = [
-        Edge(0, 1, 0.2),
-        Edge(0, 1, 0.8),
-        Edge(0, 1, 0.2),
-        Edge(1, 2, 0.2),
-        Edge(1, 2, 0.9),
-        Edge(3, 2, 0.1),
-        Edge(1, 0, 0.01),
-        Edge(3, 0, 0.4)
-    ]
-    algo = DFS0CertificateAlgorithm()
-    metrics = monte_carlo(edge_lst, DFS0CertificateAlgorithm(len(edge_lst) - 1), 100, True)
-
-
 @app.callback(
     Output("metrics", "children"),
     Input("metrics-btn", "n_clicks"),
+    Input("edge-store", "data"),
+    Input("algo-store", "data"),
     prevent_initial_call=False,
 )
-def run_metrics(n_clicks):
+def run_metrics(n_clicks, edge_data, algo_key):
     # If not clicked yet, keep helper text
     if not n_clicks:
         return [
@@ -329,21 +387,12 @@ def run_metrics(n_clicks):
 
     # Reuse the same synthetic graph/algo as simulate_graph().
     # If you later store edges/algo in dcc.Store, swap this out to read from there.
-    edge_lst = [
-        Edge(0, 1, 0.2),
-        Edge(0, 1, 0.8),
-        Edge(0, 1, 0.2),
-        Edge(1, 2, 0.2),
-        Edge(1, 2, 0.9),
-        Edge(3, 2, 0.1),
-        Edge(1, 0, 0.01),
-        Edge(3, 0, 0.4),
-    ]
+    edge_lst = [Edge(e["start"], e["end"], e["prob"]) for e in edge_data]
 
     # Run Monte Carlo. Assumes monte_carlo is imported from src.graph via the wildcard import.
-    # We pass a DFS0CertificateAlgorithm() instance; adjust trials/flags as your API expects.
+    AlgoCls, monte_flag = resolve_algo(algo_key)
     try:
-        metrics = monte_carlo(edge_lst, Optimal1CertificateAlgorithm(), 10, True)
+        metrics = monte_carlo(edge_lst, AlgoCls(), 10, monte_flag)
     except Exception as e:
         metrics = {"error": str(e)}
 
@@ -356,14 +405,14 @@ def run_metrics(n_clicks):
             return repr(x)
 
     return [
-        html.H4("Monte Carlo Metrics"),
+        html.H4(f"Monte Carlo Metrics — {algo_key or 'AlwaysHighestAlgorithm'}"),
         html.Ul([
-        html.Li(f"Simulations: {metrics.simulations}"),
-        html.Li(f"Connected: {metrics.connected}"),
-        html.Li(f"Disconnected: {metrics.disconnected}"),
-        html.Li(f"Avg 1-certificate flips: {metrics.connected_flipped/metrics.connected:.2f}" if metrics.connected else "N/A"),
-        html.Li(f"Avg 0-certificate flips: {metrics.disconnected_flipped/metrics.disconnected:.2f}" if metrics.disconnected else "N/A")
-    ])
+            html.Li(f"Simulations: {metrics.simulations}") if hasattr(metrics, 'simulations') else html.Li(f"Simulations: N/A"),
+            html.Li(f"Connected: {metrics.connected}") if hasattr(metrics, 'connected') else html.Li(f"Connected: N/A"),
+            html.Li(f"Disconnected: {metrics.disconnected}") if hasattr(metrics, 'disconnected') else html.Li(f"Disconnected: N/A"),
+            html.Li(f"Avg 1-certificate flips: {metrics.connected_flipped/metrics.connected:.2f}") if hasattr(metrics, 'connected_flipped') and getattr(metrics, 'connected', 0) else html.Li("Avg 1-certificate flips: N/A"),
+            html.Li(f"Avg 0-certificate flips: {metrics.disconnected_flipped/metrics.disconnected:.2f}") if hasattr(metrics, 'disconnected_flipped') and getattr(metrics, 'disconnected', 0) else html.Li("Avg 0-certificate flips: N/A"),
+        ])
     ]
 
 if __name__ == "__main__":

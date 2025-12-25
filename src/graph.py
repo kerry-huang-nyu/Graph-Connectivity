@@ -147,7 +147,7 @@ class Graph:
             if edge.prob == 1:
                 return (0, 0) #probability it is 0 is 0 and expected tests is 0 
         
-        return (prob, expected)
+        return (prob, expected) #prob is now Q_i and expected is C_i
 
 
     def __repr__(self) -> str:

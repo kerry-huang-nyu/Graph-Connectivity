@@ -1,4 +1,35 @@
-## Sources Referenced + Log of Progress.
+## Operating Instructions
+Initial setup 
+```python 
+pip install -r requirements.txt
+source venv/bin/activate 
+```
+
+To run the dash visualizations
+```python 
+python visualizations.py 
+```
+
+To run the graph.py source code 
+```python 
+python graph.py 
+```
+
+
+## Lectures/Papers/Resources Referenced: 
+1. Online Graph Connectivity Function:
+    - MIT Lecture: https://courses.csail.mit.edu/6.851/spring12/scribe/L20.pdf
+    - Wikipedia Dynamic Connectivity: https://en.wikipedia.org/wiki/Dynamic_connectivity
+    - Stanford Euler Tour Trees: https://web.stanford.edu/class/archive/cs/cs166/cs166.1146/lectures/04/Small04.pdf 
+    - Stanford Euler Tour Trees: https://web.stanford.edu/class/archive/cs/cs166/cs166.1146/lectures/17/Slides17.pdf
+    - Codeforces Online Dynamic Connectivity Blog: https://codeforces.com/blog/entry/128556
+    - Implementation: https://github.com/tomtseng/dynamic-connectivity-hdt **Implementation is in C but I created modules using pybind and compiled it into the dynamic_connectivity file included here**
+
+2. Optimal Satisficing And OR Tree: https://www.sciencedirect.com/science/article/pii/S0004370205001438
+
+
+
+## Progress Log
 
 ### 9/5:
 Tasks: N/A
@@ -86,15 +117,3 @@ Tasks:
 
 Meeting: 
 1. Potential dp algorithm for the f(x) = 1 case 
-
-
-## Lectures/Papers/Resources Referenced: 
-1. Online Graph Connectivity Function:
-    - MIT Lecture: https://courses.csail.mit.edu/6.851/spring12/scribe/L20.pdf
-    - Wikepecia Dynamic Connectivity: https://en.wikipedia.org/wiki/Dynamic_connectivity
-    - Stanford Euler Tour Trees: https://web.stanford.edu/class/archive/cs/cs166/cs166.1146/lectures/04/Small04.pdf 
-    - Stanford Euler Tour Trees: https://web.stanford.edu/class/archive/cs/cs166/cs166.1146/lectures/17/Slides17.pdf
-    - Codeforces Online Dynamic Connectivity Blog: https://codeforces.com/blog/entry/128556
-    - Implementation: https://github.com/tomtseng/dynamic-connectivity-hdt **Implementation is in C but I created modules using pybind and compiled it into the dynamic_connectivity file included here**
-
-2. Optimal Satisficing And OR Tree: https://www.sciencedirect.com/science/article/pii/S0004370205001438

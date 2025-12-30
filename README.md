@@ -1,19 +1,33 @@
 ## Operating Instructions
-Initial setup 
-```python 
+**Initial setup**
+```
 pip install -r requirements.txt
 source venv/bin/activate 
 ```
 
-To run the dash visualizations
-```python 
+**To run the dash visualizations**
+```
 python visualizations.py 
 ```
 
-To run the graph.py source code 
-```python 
+**To run the graph.py source code**
+```
 python graph.py 
 ```
+
+**To compile the dynamic connectivity file** 
+*Using pybind and cmake to compile c++ into modules python can import. Modified from Tom Tseng's implementation and added pybind modules in **dynamic_connectivity.cpp**. Original implementation linked in resources references. 
+```
+#create a build directory 
+cd compile 
+mkdir build 
+cd build 
+
+#compile then build 
+cmake .. \ -DCMAKE_PREFIX_PATH="$(python -m pybind11 --cmakedir)"
+cmake --build .
+```
+The **dynamic_connectivity.so** file can now be imported by python. 
 
 
 ## Lectures/Papers/Resources Referenced: 
@@ -23,7 +37,7 @@ python graph.py
     - Stanford Euler Tour Trees: https://web.stanford.edu/class/archive/cs/cs166/cs166.1146/lectures/04/Small04.pdf 
     - Stanford Euler Tour Trees: https://web.stanford.edu/class/archive/cs/cs166/cs166.1146/lectures/17/Slides17.pdf
     - Codeforces Online Dynamic Connectivity Blog: https://codeforces.com/blog/entry/128556
-    - Implementation: https://github.com/tomtseng/dynamic-connectivity-hdt **Implementation is in C but I created modules using pybind and compiled it into the dynamic_connectivity file included here**
+    - Dynamic Connectivity Implementation: https://github.com/tomtseng/dynamic-connectivity-hdt **Implementation is in C but I created modules using pybind and compiled it into the dynamic_connectivity file included here**
 
 2. Optimal Satisficing And OR Tree: https://www.sciencedirect.com/science/article/pii/S0004370205001438
 

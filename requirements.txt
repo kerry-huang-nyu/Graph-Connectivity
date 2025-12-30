@@ -29,6 +29,7 @@ plotly==6.3.1
 prompt_toolkit==3.0.52
 ptyprocess==0.7.0
 pure_eval==0.2.3
+pybind11==3.0.1
 Pygments==2.19.2
 pyvis==0.3.2
 requests==2.32.5
